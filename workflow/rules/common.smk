@@ -1,6 +1,7 @@
 # Copied from https://github.com/mirnylab/distiller-sm/blob/master/_distiller_common.py
 import os, pathlib
 import numpy as np
+import pandas as pd
 import shlex
 
 def argstring_to_dict(argstring):
@@ -72,22 +73,79 @@ def check_fastq_dict_structure(library_run_fastqs):
     return True
 
 
+def parse_fastq_dataframe(df):
+    """
+    Convert a pandas DataFrame to library_run_fastqs dictionary structure.
+    
+    Args:
+        df (pd.DataFrame): DataFrame with columns: sample_id, lane, fastq1, fastq2
+        
+    Returns:
+        dict: A nested dictionary with structure {library: {run: [fastq1, fastq2]}}
+    """
+    # Validate required columns
+    required_columns = {'sample_id', 'lane', 'fastq1', 'fastq2'}
+    if not required_columns.issubset(df.columns):
+        missing = required_columns - set(df.columns)
+        raise Exception(
+            f"DataFrame is missing required columns: {missing}. "
+            f"Required columns are: {required_columns}"
+        )
+    
+    library_run_fastqs = {}
+    
+    # Iterate through DataFrame rows and build the nested dictionary
+    for _, row in df.iterrows():
+        library = str(row['sample_id'])
+        run = str(row['lane'])
+        fastq1 = str(row['fastq1'])
+        fastq2 = str(row['fastq2'])
+        
+        # Initialize nested dictionaries if they don't exist
+        if library not in library_run_fastqs:
+            library_run_fastqs[library] = {}
+        if run not in library_run_fastqs[library]:
+            library_run_fastqs[library][run] = []
+        
+        # Add fastq files
+        library_run_fastqs[library][run] = [fastq1, fastq2]
+    
+    return library_run_fastqs
+
+
 def organize_fastqs(config):
-    if isinstance(config["input"]["raw_reads_paths"], str):
-        library_run_fastqs = parse_fastq_folder(config["input"]["raw_reads_paths"])
-    elif isinstance(config["input"]["raw_reads_paths"], dict):
-        if not check_fastq_dict_structure(config["input"]["raw_reads_paths"]):
+    load_csv = config["input"]["load_csv"]
+    if load_csv:
+        fastq_csv = config["input"]["fastq_csv"]
+        raw_reads_input = pd.read_csv(fastq_csv)
+    else:
+        raw_reads_input = config["input"]["raw_reads_paths"]
+    
+    # Case 1: String path to a folder
+    if isinstance(raw_reads_input, str):
+        library_run_fastqs = parse_fastq_folder(raw_reads_input)
+    
+    # Case 2: pandas DataFrame
+    elif isinstance(raw_reads_input, pd.DataFrame):
+        library_run_fastqs = parse_fastq_dataframe(raw_reads_input)
+    
+    # Case 3: Dictionary structure
+    elif isinstance(raw_reads_input, dict):
+        if not check_fastq_dict_structure(raw_reads_input):
             raise Exception(
                 "An unknown format for library_fastqs! Please provide it as either "
-                'a path to the folder structured as "library/run/fastqs" or '
-                "a dictionary specifying the project structure."
+                'a path to the folder structured as "library/run/fastqs", '
+                "a dictionary specifying the project structure, or "
+                "a pandas DataFrame with columns: sample_id, lane, fastq1, fastq2."
             )
-        library_run_fastqs = config["input"]["raw_reads_paths"]
+        library_run_fastqs = raw_reads_input
+    
     else:
         raise Exception(
             "An unknown format for library_fastqs! Please provide it as either "
-            "a path to the folder with the structure library/run/fastqs or "
-            "a dictionary specifying the project structure."
+            "a path to the folder with the structure library/run/fastqs, "
+            "a dictionary specifying the project structure, or "
+            "a pandas DataFrame with columns: sample_id, lane, fastq1, fastq2."
         )
 
     return library_run_fastqs

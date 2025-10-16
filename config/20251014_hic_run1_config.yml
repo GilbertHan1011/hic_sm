@@ -1,40 +1,9 @@
-#########################################
-# THIS IS A TYPICAL config.yml TEMPLATE
-# most of the settings present here
-# are GO for mapping production data
-# but nonetheless user must consider
-# carefully every presented option
-#########################################
-
-#########################################
-# When commmenting parameters out, make sure
-# that each section still has at least one
-# uncommented parameter, otherwise it
-# will not get properly parsed.
-#########################################
-
-
-
-#######################################
-# provide paths to your raw input data (fastq-s):
-#######################################
-# Fastqs can be provided in THREE ways:
-# 1. Dictionary (below) - a pairs of relative/absolute paths
-# 2. Folder path - specify a path to folder structured as "library/run/fastqs"
-# 3. CSV/DataFrame - set load_csv: True and provide path to CSV file
-#
-# CSV file format (columns: sample_id, lane, fastq1, fastq2):
-#   sample_id,lane,fastq1,fastq2
-#   test1,lane1,/path/to/test1_R1.fq.gz,/path/to/test1_R2.fq.gz
-#
-# For SRA downloads, use: sra:<SRA_NUMBER>, optionally followed by 
-# "?start=<first>&end=<last>"
-
+# run time : 20251014
 input:
     # Set to True to load FASTQ paths from CSV file instead of raw_reads_paths below
     load_csv : True
     # Path to CSV file with columns: sample_id, lane, fastq1, fastq2
-    fastq_csv : "/data2/litian/macrophage/script/hic_pipeline/distiller-sm/config/fastq_input_template.csv"
+    fastq_csv : "/data2/litian/macrophage/data/20251014_hic_sample.csv"
     
     # If load_csv is False, use this dictionary structure:
     raw_reads_paths:
@@ -61,20 +30,18 @@ input:
     
     # Define custom library groups (optional if all_group is True)
     # When all_group: True, an "all" group is auto-generated
-    library_groups:
-        test:
-            - test1
-            - test2
-            - test3
-            - test4
-
-
+#    library_groups:
+#        test:
+#            - test1
+#            - test2
+#            - test3
+#            - test4
     truncate_fastq_reads: 0
 
     genome:
-        assembly_name: 'sac'
-        bwa_index_wildcard_path: '/data2/litian/macrophage/script/hic_pipeline/distiller-sm/test/genome/sacCer3.fa'
-        chrom_sizes_path: '/data2/litian/macrophage/script/hic_pipeline/distiller-sm/test/genome/sacCer3.chrom.sizes'
+        assembly_name: 'hg38'
+        bwa_index_wildcard_path: '/data2/litian/database/genome/GRCh38.primary_assembly.genome.fa.gz'
+        chrom_sizes_path: '/data2/litian/database/chrom_size/hg38.chrom.sizes'
 
 do_fastqc: True
 
@@ -241,19 +208,19 @@ bin:
 output:
     dirs:
         downloaded_fastqs: '/data2/litian/macrophage/script/hic_pipeline/distiller-sm/test/fastq'
-        fastqc: 'results/fastqc'
-        processed_fastqs: 'results/processed_fastqs'
-        mapped_parsed_sorted_chunks: 'results/mapped_parsed_sorted_chunks'
-        pairs_runs: 'results/pairs_runs'
-        pairs_library: 'results/pairs_library'
-        coolers_library: 'results/coolers_library'
-        coolers_library_group: 'results/coolers_library_group'
-        stats_library_group: 'results/stats_library_group'
-        multiqc: 'results/multiqc'
+        fastqc: '/data2/litian/macrophage/results/20251013_hic/fastqc'
+        processed_fastqs: '/data2/litian/macrophage/results/20251013_hic/processed_fastqs'
+        mapped_parsed_sorted_chunks: '/data2/litian/macrophage/results/20251013_hic/mapped_parsed_sorted_chunks'
+        pairs_runs: '/data2/litian/macrophage/results/20251013_hic/pairs_runs'
+        pairs_library: '/data2/litian/macrophage/results/20251013_hic/pairs_library'
+        coolers_library: '/data2/litian/macrophage/results/20251013_hic/coolers_library'
+        coolers_library_group: '/data2/litian/macrophage/results/20251013_hic/coolers_library_group'
+        stats_library_group: '/data2/litian/macrophage/results/20251013_hic/stats_library_group'
+        multiqc: '/data2/litian/macrophage/results/20251013_hic/multiqc'
 
 # To use automatic upload to resgen, add your credentials to  ~/.resgen/credentials
 # (see https://docs-python.resgen.io/cli.html#logging-in)
 resgen:
     upload: False
     user: Gilbert
-    project: GTVM_microC
+    project: Macrophage_hic
