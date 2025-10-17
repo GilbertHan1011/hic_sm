@@ -82,152 +82,123 @@ if config["map"]["mapper"] in ["bwa-mem", "bwa-mem2", "bwa-meme"]:
 
 if config["map"]["mapper"] == "bowtie2":
 
-    # Bowtie2 rescue mapping workflow - Step 1: Global alignment for R1
-    rule bowtie2_global_align_R1:
+    # Bowtie2 rescue mapping workflow - Step 1: Global alignment
+    rule bowtie2_global_align:
         input:
             sample=lambda wildcards: (
-                [f"{processed_fastqs_folder}/{{library}}/{{run}}/1.{{chunk_id}}_trimmed.fastq.gz"]
+                [f"{processed_fastqs_folder}/{{library}}/{{run}}/{wildcards.side}.{{chunk_id}}_trimmed.fastq.gz"]
                 if config["map"]["trim_options"]
-                else [f"{processed_fastqs_folder}/{{library}}/{{run}}/1.{{chunk_id}}.fastq.gz"]
+                else [f"{processed_fastqs_folder}/{{library}}/{{run}}/{wildcards.side}.{{chunk_id}}.fastq.gz"]
             ),
- #           reference=bowtie_index_path,
             idx=idx,
         output:
-            bam=temp(f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}_R1.global.bam"),
-            unaligned=temp(f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}_R1.global.unmap.fastq"),
+            bam=temp(f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}_{{side}}.global.bam"),
+            unaligned=temp(f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}_{{side}}.global.unmap.fastq"),
         params:
             extra=config["map"].get("rescue_options", {}).get("global_extra", "--very-sensitive -L 30 --score-min L,-0.6,-0.2 --end-to-end --reorder"),
         threads: 8
         log:
-            "logs/bowtie2_global/{library}.{run}.{chunk_id}_R1.log",
+            "logs/bowtie2_global/{library}.{run}.{chunk_id}_{side}.log",
         benchmark:
-            "benchmarks/bowtie2_global/{library}.{run}.{chunk_id}_R1.tsv"
+            "benchmarks/bowtie2_global/{library}.{run}.{chunk_id}_{side}.tsv"
+        wildcard_constraints:
+            side="[12]"
         wrapper:
             "v3.9.0/bio/bowtie2/align"
 
-    # Step 1b: Global alignment for R2
-    rule bowtie2_global_align_R2:
+    # Step 2: Cutsite trimming for unmapped reads
+    rule cutsite_trim:
         input:
-            sample=lambda wildcards: (
-                [f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}_trimmed.fastq.gz"]
-                if config["map"]["trim_options"]
-                else [f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}.fastq.gz"]
+            fastq=f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}_{{side}}.global.unmap.fastq",
+        output:
+            fastq=temp(f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}_{{side}}.trimmed.fastq"),
+        params:
+            cutsite=lambda wildcards: (
+                SAMPLE_METADATA.get(wildcards.library, {})
+                               .get(wildcards.run, {})
+                               .get('ligation_site', config["map"].get("cutsite", "GATCGATC"))
             ),
-  #          reference=bowtie_index_path,
-            idx=idx,
-        output:
-            bam=temp(f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}_R2.global.bam"),
-            unaligned=temp(f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}_R2.global.unmap.fastq"),
-        params:
-            extra=config["map"].get("rescue_options", {}).get("global_extra", "--very-sensitive -L 30 --score-min L,-0.6,-0.2 --end-to-end --reorder"),
-        threads: 8
         log:
-            "logs/bowtie2_global/{library}.{run}.{chunk_id}_R2.log",
-        benchmark:
-            "benchmarks/bowtie2_global/{library}.{run}.{chunk_id}_R2.tsv"
-        wrapper:
-            "v3.9.0/bio/bowtie2/align"
-
-    # Step 2: Cutsite trimming for R1 unmapped reads
-    rule cutsite_trim_R1:
-        input:
-            fastq=f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}_R1.global.unmap.fastq",
-        output:
-            fastq=temp(f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}_R1.trimmed.fastq"),
-        params:
-            cutsite=config["map"].get("cutsite", "GATCGATC"),
-        log:
-            "logs/cutsite_trim/{library}.{run}.{chunk_id}_R1.log",
+            "logs/cutsite_trim/{library}.{run}.{chunk_id}_{side}.log",
+        wildcard_constraints:
+            side="[12]"
         conda:
             "../envs/bowtie2_rescue.yml"
         shell:
             "workflow/scripts/cutsite_trimming --fastq {input.fastq} --cutsite {params.cutsite} --out {output.fastq} >{log} 2>&1"
 
-    # Step 2b: Cutsite trimming for R2 unmapped reads
-    rule cutsite_trim_R2:
+    # Step 3: Local alignment for trimmed reads
+    rule bowtie2_local_align:
         input:
-            fastq=f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}_R2.global.unmap.fastq",
-        output:
-            fastq=temp(f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}_R2.trimmed.fastq"),
-        params:
-            cutsite=config["map"].get("cutsite", "GATCGATC"),
-        log:
-            "logs/cutsite_trim/{library}.{run}.{chunk_id}_R2.log",
-        conda:
-            "../envs/bowtie2_rescue.yml"
-        shell:
-            "workflow/scripts/cutsite_trimming --fastq {input.fastq} --cutsite {params.cutsite} --out {output.fastq} >{log} 2>&1"
-
-    # Step 3: Local alignment for R1 trimmed reads
-    rule bowtie2_local_align_R1:
-        input:
-            sample=[f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}_R1.trimmed.fastq"],
-  #          reference=bowtie_index_path,
+            sample=[f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}_{{side}}.trimmed.fastq"],
             idx=idx,
         output:
-            bam=temp(f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}_R1.local.bam"),
+            bam=temp(f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}_{{side}}.local.bam"),
         params:
             extra=config["map"].get("rescue_options", {}).get("local_extra", "--very-sensitive -L 20 --score-min L,-0.6,-0.2 --end-to-end --reorder"),
         threads: 8
         log:
-            "logs/bowtie2_local/{library}.{run}.{chunk_id}_R1.log",
+            "logs/bowtie2_local/{library}.{run}.{chunk_id}_{side}.log",
         benchmark:
-            "benchmarks/bowtie2_local/{library}.{run}.{chunk_id}_R1.tsv"
+            "benchmarks/bowtie2_local/{library}.{run}.{chunk_id}_{side}.tsv"
+        wildcard_constraints:
+            side="[12]"
         wrapper:
             "v3.9.0/bio/bowtie2/align"
+    
+    def get_merge_inputs(wildcards):
+        """
+        Dynamically determine the input files for merging.
+        If skip_ligation is True for the sample, only return the global_bam.
+        Otherwise, return both global_bam and local_bam.
+        """
+        # Check the skip_ligation flag from the metadata
+        skip_ligation = (
+            SAMPLE_METADATA.get(wildcards.library, {})
+                        .get(wildcards.run, {})
+                        .get('skip_ligation', False)
+        )
 
-    # Step 3b: Local alignment for R2 trimmed reads
-    rule bowtie2_local_align_R2:
+        # Start with the global_bam, which is always required
+        input_files = [
+            f"{mapped_parsed_sorted_chunks_folder}/{wildcards.library}/{wildcards.run}/{wildcards.chunk_id}_{wildcards.side}.global.bam"
+        ]
+
+        # If we are NOT skipping ligation, add the local_bam
+        if not skip_ligation:
+            input_files.append(
+                f"{mapped_parsed_sorted_chunks_folder}/{wildcards.library}/{wildcards.run}/{wildcards.chunk_id}_{wildcards.side}.local.bam"
+            )
+
+        # Return the list of files
+        return input_files
+
+
+    # Step 4: Merge global and local alignments
+    rule merge_global_local:
         input:
-            sample=[f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}_R2.trimmed.fastq"],
- #           reference=bowtie_index_path,
-            idx=idx,
+            get_merge_inputs 
         output:
-            bam=temp(f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}_R2.local.bam"),
+            merged=temp(f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}_{{side}}.merged.bam"),
+        threads: 4
+        log:
+            "logs/merge_global_local/{library}.{run}.{chunk_id}_{side}.log",
+        wildcard_constraints:
+            side="[12]"
         params:
-            extra=config["map"].get("rescue_options", {}).get("local_extra", "--very-sensitive -L 20 --score-min L,-0.6,-0.2 --end-to-end --reorder"),
-        threads: 8
-        log:
-            "logs/bowtie2_local/{library}.{run}.{chunk_id}_R2.log",
-        benchmark:
-            "benchmarks/bowtie2_local/{library}.{run}.{chunk_id}_R2.tsv"
-        wrapper:
-            "v3.9.0/bio/bowtie2/align"
-
-    # Step 4: Merge global and local alignments for R1
-    rule merge_global_local_R1:
-        input:
-            global_bam=f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}_R1.global.bam",
-            local_bam=f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}_R1.local.bam",
-        output:
-            merged=temp(f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}_R1.merged.bam"),
-        threads: 4
-        log:
-            "logs/merge_global_local/{library}.{run}.{chunk_id}_R1.log",
+            # This param is no longer needed by the shell, 
+            # but the input function still uses the logic.
+            num_inputs=lambda i: len(i),
         conda:
             "../envs/bowtie2_rescue.yml"
         shell:
             r"""
-            samtools merge -@ {threads} -n -f {output.merged} {input.global_bam} {input.local_bam} 2>{log} && \
-            samtools sort -@ {threads} -m 2G -n -o {output.merged}.tmp {output.merged} 2>>{log} && \
-            mv {output.merged}.tmp {output.merged}
-            """
+            # NO if/else needed. 
+            # {input} will automatically expand to one or two file paths.
+            # samtools merge handles both cases gracefully.
+            samtools merge -@ {threads} -n -f {output.merged} {input} 2>>{log}
 
-    # Step 4b: Merge global and local alignments for R2
-    rule merge_global_local_R2:
-        input:
-            global_bam=f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}_R2.global.bam",
-            local_bam=f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}_R2.local.bam",
-        output:
-            merged=temp(f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}_R2.merged.bam"),
-        threads: 4
-        log:
-            "logs/merge_global_local/{library}.{run}.{chunk_id}_R2.log",
-        conda:
-            "../envs/bowtie2_rescue.yml"
-        shell:
-            r"""
-            samtools merge -@ {threads} -n -f {output.merged} {input.global_bam} {input.local_bam} 2>{log} && \
+            # The subsequent sort command runs in both cases, as in the original rule
             samtools sort -@ {threads} -m 2G -n -o {output.merged}.tmp {output.merged} 2>>{log} && \
             mv {output.merged}.tmp {output.merged}
             """
@@ -235,8 +206,8 @@ if config["map"]["mapper"] == "bowtie2":
     # Step 5: Pair R1 and R2 reads using mergeSAM.py
     rule pair_rescue_reads:
         input:
-            r1=f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}_R1.merged.bam",
-            r2=f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}_R2.merged.bam",
+            r1=f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}_1.merged.bam",
+            r2=f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}_2.merged.bam",
         output:
             paired=f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.bam",
             stats=f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.pairstat",

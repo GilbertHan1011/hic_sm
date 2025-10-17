@@ -49,6 +49,25 @@ chromsizes_path = config["input"]["genome"]["chrom_sizes_path"]
 
 LIBRARY_RUN_FASTQS = organize_fastqs(config)
 
+# Store sample metadata (e.g., ligation_site) if loading from CSV
+SAMPLE_METADATA = {}
+if config["input"].get("load_csv", False):
+    csv_file = config["input"].get("fastq_csv", "samples.csv")
+    if os.path.exists(csv_file):
+        fastq_df = pd.read_csv(csv_file)
+        # Store metadata for each library/run combination
+        for _, row in fastq_df.iterrows():
+            library = str(row['sample_id'])
+            run = str(row['lane'])
+            if library not in SAMPLE_METADATA:
+                SAMPLE_METADATA[library] = {}
+            SAMPLE_METADATA[library][run] = {}
+            # Store ligation_site if available
+            if 'ligation_site' in row and pd.notna(row['ligation_site']):
+                SAMPLE_METADATA[library][run]['ligation_site'] = str(row['ligation_site'])
+            if 'skip_ligation' in row and pd.notna(row['skip_ligation']):
+                SAMPLE_METADATA[library][run]['skip_ligation'] = bool(row['skip_ligation'])
+
 # Automatically create library_groups if all_group is True
 if config["input"].get("all_group", False):
     all_libraries = list(LIBRARY_RUN_FASTQS.keys())
