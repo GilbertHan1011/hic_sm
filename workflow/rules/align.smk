@@ -92,7 +92,7 @@ if config["map"]["mapper"] == "bowtie2":
             ),
             idx=idx,
         output:
-            bam=temp(f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}_{{side}}.global.bam"),
+            bam=f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}_{{side}}.global.bam",
             unaligned=temp(f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}_{{side}}.global.unmap.fastq"),
         params:
             extra=config["map"].get("rescue_options", {}).get("global_extra", "--very-sensitive -L 30 --score-min L,-0.6,-0.2 --end-to-end --reorder"),
@@ -103,8 +103,23 @@ if config["map"]["mapper"] == "bowtie2":
             "benchmarks/bowtie2_global/{library}.{run}.{chunk_id}_{side}.tsv"
         wildcard_constraints:
             side="[12]"
-        wrapper:
-            "v3.9.0/bio/bowtie2/align"
+        conda:
+            "../envs/bowtie2_rescue.yml"
+        shell:
+            r"""
+            # Find bowtie2 index base (strip .1.bt2, .2.bt2, .rev.1.bt2, .rev.2.bt2, etc.)
+            idx_files=({input.idx})
+            index_prefix="${{idx_files[0]%%.*}}"
+            (bowtie2 {params.extra} \
+                -p {threads} \
+                -x "${{index_prefix}}" \
+                -U {input.sample[0]} \
+                --un {output.unaligned} \
+                2> {log}) \
+            | samtools view -F 4 -@ {threads} -bS - \
+            > {output.bam}
+            """
+
 
     # Step 2: Cutsite trimming for unmapped reads
     rule cutsite_trim:
@@ -133,7 +148,7 @@ if config["map"]["mapper"] == "bowtie2":
             sample=[f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}_{{side}}.trimmed.fastq"],
             idx=idx,
         output:
-            bam=temp(f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}_{{side}}.local.bam"),
+            bam=f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}_{{side}}.local.bam",
         params:
             extra=config["map"].get("rescue_options", {}).get("local_extra", "--very-sensitive -L 20 --score-min L,-0.6,-0.2 --end-to-end --reorder"),
         threads: 8
@@ -143,8 +158,21 @@ if config["map"]["mapper"] == "bowtie2":
             "benchmarks/bowtie2_local/{library}.{run}.{chunk_id}_{side}.tsv"
         wildcard_constraints:
             side="[12]"
-        wrapper:
-            "v3.9.0/bio/bowtie2/align"
+        conda:
+            "../envs/bowtie2_rescue.yml"
+        shell:
+            r"""
+            # Find bowtie2 index base (strip .1.bt2, .2.bt2, .rev.1.bt2, .rev.2.bt2, etc.)
+            idx_files=({input.idx})
+            index_prefix="${{idx_files[0]%%.*}}"
+            (bowtie2 {params.extra} \
+                -p {threads} \
+                -x "${{index_prefix}}" \
+                -U {input.sample[0]} \
+                2> {log}) \
+            | samtools view -@ {threads} -bS - \
+            > {output.bam}
+            """
     
     def get_merge_inputs(wildcards):
         """
@@ -179,28 +207,57 @@ if config["map"]["mapper"] == "bowtie2":
         input:
             get_merge_inputs 
         output:
-            merged=temp(f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}_{{side}}.merged.bam"),
+            merged=f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}_{{side}}.merged.bam",
+            mapstat=f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}_{{side}}.mapstat",
         threads: 4
         log:
             "logs/merge_global_local/{library}.{run}.{chunk_id}_{side}.log",
         wildcard_constraints:
             side="[12]"
         params:
-            # This param is no longer needed by the shell, 
-            # but the input function still uses the logic.
             num_inputs=lambda i: len(i),
         conda:
             "../envs/bowtie2_rescue.yml"
         shell:
             r"""
-            # NO if/else needed. 
-            # {input} will automatically expand to one or two file paths.
-            # samtools merge handles both cases gracefully.
+            # samtools merge (one or two inputs)
             samtools merge -@ {threads} -n -f {output.merged} {input} 2>>{log}
 
-            # The subsequent sort command runs in both cases, as in the original rule
+            # sort (name sort)
             samtools sort -@ {threads} -m 2G -n -o {output.merged}.tmp {output.merged} 2>>{log} && \
             mv {output.merged}.tmp {output.merged}
+
+            # 1. Assign the Snakemake path to a new shell variable
+            merged_bam="{output.merged}"
+
+            # 2. Use double braces {{...}} to tell Snakemake to ignore this line.
+            #    The shell will now correctly perform the string trimming.
+            prefix="${{merged_bam%.merged.bam}}"
+            tag="{wildcards.side}"
+            # Set variables for bam1 (global BAM) and bam2 (local BAM if present)
+            inputs=({input})
+            bam1="${{inputs[0]}}"
+            if (( ${{#inputs[@]}} > 1 )); then
+                bam2="${{inputs[1]}}"
+            else
+                bam2=""
+            fi
+
+            echo "## ${{prefix}}" > {output.mapstat}
+            printf "total_${{tag}}\t" >> {output.mapstat}
+            samtools view -c {output.merged} >> {output.mapstat}
+            printf "mapped_${{tag}}\t" >> {output.mapstat}
+            samtools view -c -F 4 {output.merged} >> {output.mapstat}
+            printf "global_${{tag}}\t" >> {output.mapstat}
+            samtools view -c -F 4 "$bam1" >> {output.mapstat}
+
+            # If local bam is present, count mapped for local; else, print 0
+            printf "local_${{tag}}\t"  >> {output.mapstat}
+            if [[ -n "$bam2" ]]; then
+                samtools view -c -F 4 "$bam2" >> {output.mapstat}
+            else
+                echo 0 >> {output.mapstat}
+            fi
             """
 
     # Step 5: Pair R1 and R2 reads using mergeSAM.py
