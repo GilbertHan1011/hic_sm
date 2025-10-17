@@ -6,7 +6,7 @@ import shlex
 
 include: "rules/common.smk"
 
-configfile: "config/20251014_hic_run1_config.yml"
+configfile: "config/test_config.yml"
 
 # Load FASTQ samples from CSV if specified
 import os
@@ -31,6 +31,7 @@ fastqc_folder = config["output"]["dirs"]["fastqc"]
 mapped_parsed_sorted_chunks_folder = config["output"]["dirs"][
     "mapped_parsed_sorted_chunks"
 ]
+
 pairs_runs_folder = config["output"]["dirs"]["pairs_runs"]
 pairs_library_folder = config["output"]["dirs"]["pairs_library"]
 coolers_library_folder = config["output"]["dirs"]["coolers_library"]
@@ -41,6 +42,7 @@ multiqc_folder = config["output"]["dirs"]["multiqc"]
 
 assembly = config["input"]["genome"]["assembly_name"]
 genome_path = config["input"]["genome"]["bwa_index_wildcard_path"].rstrip("*")
+bowtie_index_path = config["input"]["genome"]["bowtie_index_path"].rstrip("*")
 # custom_genome_folder = Path(config["genome"]["custom_genome_path"]).parent
 chromsizes_path = config["input"]["genome"]["chrom_sizes_path"]
 
@@ -264,6 +266,16 @@ elif config["map"]["mapper"] == "bwa-mem2":
         ".bwt.2bit.64",
         ".pac",
     )
+elif config["map"]["mapper"] == "bowtie2":
+    idx = multiext(
+        bowtie_index_path,
+        ".1.bt2",
+        ".2.bt2",
+        ".3.bt2",
+        ".4.bt2",
+        ".rev.1.bt2",
+        ".rev.2.bt2",
+    )
 
 else:  # bwa-meme
     idx = multiext(
@@ -283,6 +295,10 @@ if config["map"]["mapper"] == "chromap":
 
     ruleorder: map_chunks_chromap > parse_sort_chunks
 
+elif config["map"]["mapper"] == "bowtie2":
+    
+#    ruleorder: pair_rescue_reads > map_chunks_bwa_pipe > map_chunks_bwa
+    pass
 else:
 
     ruleorder: parse_sort_chunks > map_chunks_chromap
@@ -354,19 +370,20 @@ checkpoint chunk_fastq:
 
 # If we keep bams, simply store the output in the folder, otherwise pipe it to pairtools parse
 # Perhaps something with tee might be faster, had trouble getting it to work
-if config["parse"]["keep_unparsed_bams"]:
+if config["map"]["mapper"] in ["bwa-mem", "bwa-mem2", "bwa-meme"]:
+    if config["parse"]["keep_unparsed_bams"]:
 
-    ruleorder: map_chunks_bwa > map_chunks_bwa_pipe
+        ruleorder: map_chunks_bwa > map_chunks_bwa_pipe
 
-else:
+    else:
 
-    ruleorder: map_chunks_bwa_pipe > map_chunks_bwa
+        ruleorder: map_chunks_bwa_pipe > map_chunks_bwa
 
-use rule map_chunks_bwa as map_chunks_bwa_pipe with:
-    output:
-        pipe(
-            f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.bam"
-        ),
+    use rule map_chunks_bwa as map_chunks_bwa_pipe with:
+        output:
+            pipe(
+                f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.bam"
+            ),
 
 rule merge_runs:
     input:

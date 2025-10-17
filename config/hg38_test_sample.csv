@@ -1,0 +1,2 @@
+sample_id,lane,fastq1,fastq2
+test,run1,/data2/litian/macrophage/script/hic_pipeline/distiller-sm/test/fastq/test/test1.fastq.gz,/data2/litian/macrophage/script/hic_pipeline/distiller-sm/test/fastq/test/test1.fastq.gz
