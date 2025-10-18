@@ -39,7 +39,7 @@ def needs_downloading(fastq_files, side):
     else:
         return False
 
-
+## Outputs a dictionary of the form {library: {run: [fastq1, fastq2]}}
 def parse_fastq_folder(root_folder_path):
     library_run_fastqs = {}
     fastq_root_folder = pathlib.Path(root_folder_path)

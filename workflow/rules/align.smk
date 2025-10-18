@@ -96,6 +96,13 @@ if config["map"]["mapper"] == "bowtie2":
             unaligned=temp(f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}_{{side}}.global.unmap.fastq"),
         params:
             extra=config["map"].get("rescue_options", {}).get("global_extra", "--very-sensitive -L 30 --score-min L,-0.6,-0.2 --end-to-end --reorder"),
+            samtools_flags=lambda wildcards: (
+                "-@ {threads} -bS -"  # Flags if skip_ligation is True
+                if SAMPLE_METADATA.get(wildcards.library, {})
+                                 .get(wildcards.run, {})
+                                 .get('skip_ligation', False)
+                else "-F 4 -@ {threads} -bS -" # Default flags (not skipping ligation)
+            )
         threads: 8
         log:
             "logs/bowtie2_global/{library}.{run}.{chunk_id}_{side}.log",
@@ -107,7 +114,6 @@ if config["map"]["mapper"] == "bowtie2":
             "../envs/bowtie2_rescue.yml"
         shell:
             r"""
-            # Find bowtie2 index base (strip .1.bt2, .2.bt2, .rev.1.bt2, .rev.2.bt2, etc.)
             idx_files=({input.idx})
             index_prefix="${{idx_files[0]%%.*}}"
             (bowtie2 {params.extra} \
@@ -116,7 +122,7 @@ if config["map"]["mapper"] == "bowtie2":
                 -U {input.sample[0]} \
                 --un {output.unaligned} \
                 2> {log}) \
-            | samtools view -F 4 -@ {threads} -bS - \
+            | samtools view {params.samtools_flags} \
             > {output.bam}
             """
 
@@ -276,7 +282,10 @@ if config["map"]["mapper"] == "bowtie2":
         conda:
             "../envs/bowtie2_rescue.yml"
         shell:
-            "python workflow/scripts/mergeSAM.py -v -t -q {params.min_mapq} -f {input.r1} -r {input.r2} -o {output.paired} >{log} 2>&1"
+            r"""
+            python workflow/scripts/mergeSAM.py -v -t -q {params.min_mapq} -f {input.r1} -r {input.r2} -o {output.paired} >{log} 2>&1
+            rm "{mapped_parsed_sorted_chunks_folder}/{wildcards.library}/{wildcards.run}/{wildcards.chunk_id}_1"*.bam "{mapped_parsed_sorted_chunks_folder}/{wildcards.library}/{wildcards.run}/{wildcards.chunk_id}_2"*.bam
+            """
 
 
 if config["map"]["mapper"] == "chromap":

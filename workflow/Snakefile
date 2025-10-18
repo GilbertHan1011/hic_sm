@@ -6,7 +6,9 @@ import shlex
 
 include: "rules/common.smk"
 
-configfile: "config/test_config.yml"
+configfile: "config/20251017_hic_run2_config.yml"
+
+#configfile: "config/test_config.yml"
 
 # Load FASTQ samples from CSV if specified
 import os
@@ -143,8 +145,20 @@ if "library_groups" in config["input"] and len(config["input"]["library_groups"]
     #     library_group=config["input"]["library_groups"].keys(),
     # )
 
+assemble_mapstats = []
+assemble_pairstats = []
+for library in LIBRARY_RUN_FASTQS:
+    assemble_mapstats.append(
+        f"{mapped_parsed_sorted_chunks_folder}/{library}/assemble.mapstat"
+    )
+    assemble_pairstats.append(
+        f"{mapped_parsed_sorted_chunks_folder}/{library}/assemble.pairstat"
+    )
 multiqc = [f"{multiqc_folder}/multiqc_report.html"]
 combined_dedup_stats = f"{pairs_library_folder}/combined_dedup_stats_summary.tsv"
+combined_mapstats = f"{pairs_library_folder}/combined_mapstats_summary.tsv"
+combined_pairstats = f"{pairs_library_folder}/combined_pairstats_summary.tsv"
+combined_stats = [combined_dedup_stats, combined_mapstats, combined_pairstats]
 
 # Setting up resgen upload outputs (empty files indicating that the upload has been done)
 resgen_uploads = (
@@ -200,7 +214,8 @@ rule default:
         fastqc,
         multiqc,
         resgen_uploads,
-        combined_dedup_stats,
+        combined_stats,
+        assemble_mapstats
 
 
 # Global constraints on the wildcards to be used in the workflow - ensures correct
@@ -353,6 +368,7 @@ checkpoint chunk_fastq:
             "envs/download_fastqs.yml" if config["map"]["chunksize"] > 0 else None
         )
     output:
+        #touch(f"{processed_fastqs_folder}/{{library}}/{{run}}/.chunks_ready")
         directory(f"{processed_fastqs_folder}/{{library}}/{{run}}"),
     log:
         "logs/chunk_runs/{library}.{run}.tsv",
@@ -362,21 +378,6 @@ checkpoint chunk_fastq:
         chunk_command
 
 
-
-
-# faidx doesn't work with gzipped files :( So test fails, but probably should work
-# with .fa, need to check
-# rule faidx:
-#     input:
-#         genome_custom=config["input"]["genome"]["genome_fasta_path"],
-#     output:
-#         genome_faidx=f"{config['input']['genome']['genome_fasta_path']}.fai",
-#     log:
-#         f"logs/faidx/{assembly}.log",
-#     params:
-#         extra="",  # optional params string
-#     wrapper:
-#         "v4.6.0/bio/samtools/faidx"
 
 
 # rule make_chromsizes:

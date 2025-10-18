@@ -90,6 +90,6 @@ rule fastqc:
         "benchmarks/fastqc/{library}.{run}.{side}.tsv",
     conda:
         "../envs/fastqc.yml",
-    threads: 1
+    threads: 5
     script:
         "../scripts/fastqc.py"
