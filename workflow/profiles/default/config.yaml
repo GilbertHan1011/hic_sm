@@ -11,3 +11,5 @@ set-threads:
     zoom_library: 8
     merge_zoom_library_group_coolers: 8
     scaling_pairs_library: 4
+    bowtie2_local_align: 20
+    bowtie2_global_align: 20

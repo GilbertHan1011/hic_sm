@@ -1,0 +1,72 @@
+## TODO: Combine all the statistics together
+rule map2frag:
+    input:
+        bam=f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.bam",
+    output:
+        validPairs=f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.hicpro.validPairs",
+        validPairsRSstat = f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.hicpro.RSstat",
+    threads: 4
+    params:
+        fragments_file = config["parse"].get("fragment_file")
+    benchmark:
+        "benchmarks/map2frag/{library}.{run}.{chunk_id}.tsv"
+    log:
+        "logs/map2frag/{library}.{run}.{chunk_id}.log",
+    conda:
+        "../envs/hic2frag.yml"
+    shell:
+        """
+        python workflow/scripts/mapped_2hic_fragments.py \
+            -f {params.fragments_file} \
+            -r {input.bam} \
+            -o $(dirname {output.validPairs}) \
+            &> {log}
+        """
+
+# Find out the chunk ids for each library and run - since we don't know them beforehand
+def get_all_chunks_for_library(wildcards):
+    """
+    Gathers all chunk-level .validPairs files from ALL runs that
+    belong to the requested library.
+    """
+    all_chunk_paths = []
+    # Get all run keys (e.g., 'run1', 'run2') for the given library
+    runs_for_library = LIBRARY_RUN_FASTQS[wildcards.library].keys()
+
+    # Loop over each run to find its chunks
+    for run in runs_for_library:
+        # Make sure the chunks for this library/run combo are created first
+        checkpoints.chunk_fastq.get(library=wildcards.library, run=run)
+
+        # Find all chunk IDs for this specific run
+        chunk_ids = glob_wildcards(
+            f"{processed_fastqs_folder}/{wildcards.library}/{run}/2.{{chunk_id}}.fastq.gz",
+        ).chunk_id
+        chunk_ids = [cid.replace("_trimmed", "") for cid in chunk_ids]
+
+        # Generate the paths for this run's chunks and add them to the main list
+        run_chunk_paths = expand(
+            f"{mapped_parsed_sorted_chunks_folder}/{wildcards.library}/{run}/{{chunk_id}}.hicpro.validPairs",
+            library=wildcards.library,
+            run=run,
+            chunk_id=chunk_ids
+        )
+        all_chunk_paths.extend(run_chunk_paths)
+
+    return all_chunk_paths
+
+rule merge_library_pairs:
+    input:
+        get_all_chunks_for_library
+    threads: 2
+    output:
+        f"{pairs_library_folder}/{{library}}.allValidPairs",
+        f"{pairs_library_folder}/{{library}}.allValidPairs.mergestat",
+    log:
+        "logs/merge_validpair/{library}.log",
+    benchmark:
+        "benchmarks/merge_validpair/{library}.tsv"
+    params:
+        prefix=f"{pairs_library_folder}/{{library}}"
+    shell:
+        "bash workflow/scripts/hicpro_merge_validpairs.sh -d -p {params.prefix} {input} &> {log}"

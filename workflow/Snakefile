@@ -6,7 +6,7 @@ import shlex
 
 include: "rules/common.smk"
 
-configfile: "config/20251017_hic_run2_config.yml"
+configfile: "config/test_config.yml"
 
 #configfile: "config/test_config.yml"
 
@@ -167,6 +167,13 @@ resgen_uploads = (
     else []
 )
 
+allvalidPair = []
+# allvalidpair
+for library in LIBRARY_RUN_FASTQS:
+    fastqc += expand(
+        f"{pairs_library_folder}/{library}.allValidPairs"
+    )
+
 # Some sanity checks
 # Phasing
 if config.get('phase', {}).get('do_phase', False):
@@ -215,7 +222,8 @@ rule default:
         multiqc,
         resgen_uploads,
         combined_stats,
-        assemble_mapstats
+        assemble_mapstats,
+        allvalidPair
 
 
 # Global constraints on the wildcards to be used in the workflow - ensures correct
@@ -229,55 +237,6 @@ wildcard_constraints:
     ),
     run=f"({'|'.join([re.escape(run) for run in runs])})",
     chunk_id="[0-9]+",
-
-
-# fasterq-dump just doesn't work for me on our server for some reason, but this code
-# should work as an alternative
-# Annoyingly, fasterq-dump doesn't have --gzip argument :(
-
-# fasterq_dump_extra = {}
-# fastq_accession_dict = {}
-# for library in LIBRARY_RUN_FASTQS:
-#     fastq_accession_dict[library] = {}
-#     for run in LIBRARY_RUN_FASTQS[library]:
-#         paths = LIBRARY_RUN_FASTQS[library][run]
-#         if len(paths) == 1 and paths[0].startswith("sra:"):
-#             parsed = urlparse(paths[0])
-#             srr, query = parsed.path, parsed.query
-#             if query:
-#                 start, end = get_start_end(query)
-#                 fasterq_dump_extra[srr] = f"--minSpotId {start}" if start else ""
-#                 fasterq_dump_extra[srr] += f" --maxSpotId {end}" if end else ""
-#             fastq_accession_dict[library][run] = srr
-
-
-# rule fasterq_dump:
-#     output:
-#         # the wildcard name must be accession, pointing to an SRA number
-#         temp(f"{downloaded_fastqs_folder}/{{accession}}_1.fastq.gz"),
-#         temp(f"{downloaded_fastqs_folder}/{{accession}}_2.fastq.gz"),
-#     log:
-#         "logs/fasterq_dump/{accession}.log",
-#     params:
-#         extra=lambda wildcards: fasterq_dump_extra[wildcards.accession],
-#     threads: 4
-#     wrapper:
-#         "v4.6.0/bio/sra-tools/fasterq-dump"
-
-
-# rule rename_downloaded_fastq:
-#     input:
-#         fastq1=lambda wildcards: f"{downloaded_fastqs_folder}/{fastq_accession_dict[wildcards.library][wildcards.run]}_1.fastq.gz",
-#         fastq2=lambda wildcards: f"{downloaded_fastqs_folder}/{fastq_accession_dict[wildcards.library][wildcards.run]}_2.fastq.gz",
-#     output:
-#         fastq1=f"{downloaded_fastqs_folder}/{{library}}.{{run}}.1.fastq.gz",
-#         fastq2=f"{downloaded_fastqs_folder}/{{library}}.{{run}}.2.fastq.gz",
-#     shell:
-#         """
-#         mv {input.fastq1} {output.fastq1}
-#         mv {input.fastq2} {output.fastq2}
-#         """
-
 
 
 # Depending on the mapper, the index files will be different
@@ -343,6 +302,7 @@ include: "rules/pairtools.smk"
 include: "rules/report.smk"
 include: "rules/preprocess.smk"
 include: "rules/align.smk"
+include: "rules/hicpro_style.smk"
 
 checkpoint chunk_fastq:
     input:
@@ -377,9 +337,6 @@ checkpoint chunk_fastq:
     shell:
         chunk_command
 
-
-
-
 # rule make_chromsizes:
 #     input:
 #         genome_faidx=f"{config['input']['genome']['genome_fasta_path']}.fai",
@@ -404,138 +361,6 @@ if config["map"]["mapper"] in ["bwa-mem", "bwa-mem2", "bwa-meme"]:
             pipe(
                 f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.bam"
             ),
-
-rule merge_runs:
-    input:
-        get_pair_chunks,
-    threads: 4
-    conda:
-        "envs/pairtools_cooler.yml"
-    output:
-        f"{pairs_runs_folder}/{{library}}/{{run}}.{assembly}.pairs.gz",
-    log:
-        "logs/merge_runs/{library}.{run}.log",
-    benchmark:
-        "benchmarks/merge_runs/{library}.{run}.tsv"
-    params:
-        command=lambda wildcards, input, threads, output: (
-            f"pairtools merge {input} --nproc {threads} -o {output}"
-            if len(input) > 1
-            else f"cp {input} {output}"
-        ),
-    shell:
-        r"""{params.command} \
-        >{log[0]} 2>&1
-        """
-
-
-if config["parse"]["make_pairsam"]:
-    bytile_arg = (
-        "--keep-parent-id --output-bytile-stats {output[7]}"
-        if config["dedup"].get("save_by_tile_dups", False)
-        else ""
-    )
-    dedup_command = (
-        """pairtools dedup {params.dedup_options} \
-        --max-mismatch {params.max_mismatch_bp} \
-        --mark-dups \
-        --output \
-            >( pairtools split \
-                --output-pairs {output[0]} \
-                --output-sam {output[1]} \
-             ) \
-        --output-unmapped \
-            >( pairtools split \
-                --output-pairs {output[2]} \
-                --output-sam {output[3]} \
-             ) \
-        --output-dups \
-            >( pairtools split \
-                --output-pairs {output[4]} \
-                --output-sam {output[5]} \
-             ) \
-        --output-stats {output[6]} \
-        """
-        + bytile_arg
-        + " && pairix {output[0]}"
-    )
-    merge_output = multiext(
-        f"{pairs_library_folder}/{{library}}.{assembly}",
-        ".nodups.pairs.gz",
-        ".nodups.bam",
-        ".unmapped.pairs.gz",
-        ".unmapped.bam",
-        ".dups.pairs.gz",
-        ".dups.bam",
-        ".dedup.stats",
-        ".nodups.pairs.gz.px2",
-    )
-else:
-    bytile_arg = (
-        "--keep-parent-id --output-bytile-stats {output[5]}"
-        if config["dedup"].get("save_by_tile_dups", False)
-        else ""
-    )
-    dedup_command = (
-        """pairtools dedup {params.dedup_options} \
-        --max-mismatch {params.max_mismatch_bp} \
-        --mark-dups \
-        --output {output[0]} \
-        --output-unmapped {output[1]} \
-        --output-dups {output[2]} \
-        --output-stats {output[3]} \
-        """
-        + bytile_arg
-        + " >{log[0]} 2>&1 && pairix {output[0]}"
-    )
-    merge_output = multiext(
-        f"{pairs_library_folder}/{{library}}.{assembly}",
-        ".nodups.pairs.gz",
-        ".unmapped.pairs.gz",
-        ".dups.pairs.gz",
-        ".dedup.stats",
-        ".nodups.pairs.gz.px2",
-    )
-if config["dedup"].get("save_by_tile_dups", False):
-    merge_output += [f"{pairs_library_folder}/{{library}}.{assembly}.by_tile_dups.txt"]
-
-
-rule merge_dedup:
-    input:
-        pairs=lambda wildcards: expand(
-            f"{pairs_runs_folder}/{wildcards.library}/{{run}}.{assembly}.pairs.gz",
-            run=list(LIBRARY_RUN_FASTQS[wildcards.library].keys()),
-        ),
-    params:
-        dedup_options=lambda wildcards: config["dedup"].get("dedup_options", ""),
-        max_mismatch_bp=config["dedup"]["max_mismatch_bp"],
-        merge_command=lambda wildcards, input, threads: (
-            f"pairtools merge {input} --nproc {threads} | "
-            if len(input) > 1
-            else f"bgzip -dc -@ {threads-1} {input} | "
-        ),
-        phase_command=lambda wildcards, threads: (
-            f'pairtools phase --tag-mode {config["phase"]["tag_mode"]} --phase-suffixes {" ".join(config["phase"]["suffixes"])} | pairtools sort --nproc {threads - 1} | '
-            if config.get("phase", {}).get("do_phase", False)
-            else ''
-        ),
-    threads: 4
-    conda:
-        "envs/pairtools_cooler.yml"
-    output:
-        merge_output,
-    log:
-        "logs/merge_dedup/{library}.log",
-    benchmark:
-        "benchmarks/merge_dedup/{library}.tsv"
-    shell:
-        r"{params.merge_command}" + r"{params.phase_command}" + dedup_command + " >{log[0]} 2>&1"
-
-
-# balance_args = "--balance" if {config["bin"].get("balance", True)} else ""
-# balance_options = config["bin"].get("balance_options", "")
-# if balance_args and balance_options:
-#     balance_args = f"{balance_args} {balance_options}"
 
 
 rule bin_pairs_library:

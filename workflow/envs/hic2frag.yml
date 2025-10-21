@@ -1,0 +1,8 @@
+name: hic2frag
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - pysam
+  - bx-python
