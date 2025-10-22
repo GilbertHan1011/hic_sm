@@ -40,6 +40,7 @@ input:
 
     genome:
         assembly_name: 'hg38'
+        fasta: "/data2/litian/database/bowtie2/resources/atacseq_pipeline/hg38/indices_for_Bowtie2/hg38.fa"
         bwa_index_wildcard_path: '/data2/litian/database/genome/GRCh38.primary_assembly.genome.fa.gz'
         bowtie_index_path: "/data2/litian/database/bowtie2/resources/atacseq_pipeline/hg38/indices_for_Bowtie2/hg38"
         chrom_sizes_path: '/data2/litian/database/chrom_size/hg38.chrom.sizes'
@@ -68,6 +69,8 @@ map:
     mapping_options: ''
     # ligation sites (MboI)
     cutsite: 'GATCGATC'
+    cutpattern: "^GATC"
+
     rescue_options:
         global_extra: '--very-sensitive -L 30 --score-min L,-0.6,-0.2 --end-to-end --reorder'
         local_extra: '--very-sensitive -L 20 --score-min L,-0.6,-0.2 --end-to-end --reorder'
@@ -86,7 +89,7 @@ map:
 
 # Control how read alignments are converted ('parsed') into Hi-C pairs.
 parse:
-    fragment_file: "/data2/litian/macrophage/data/mboi_fragment.bed"
+    fragment_file: "/data2/litian/macrophage/data/fragment.bed"
     # If 'make_pairsam' is True, parsed Hi-C pairs will store complete
     # alignment records in the SAM format (the resulting hybrid between the
     # .pairs and .sam formats is called '.pairsam'). Such files can be useful for
