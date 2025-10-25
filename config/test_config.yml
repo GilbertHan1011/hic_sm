@@ -226,6 +226,7 @@ output:
         coolers_library: '/data2/litian/macrophage/results/20251017_hic_test/coolers_library'
         coolers_library_group: '/data2/litian/macrophage/results/20251017_hic_test/coolers_library_group'
         stats_library_group: '/data2/litian/macrophage/results/20251017_hic_test/stats_library_group'
+        downstream_dist_folder: '/data2/litian/macrophage/results/20251017_hic_test/downstream_dist'
         multiqc: '/data2/litian/macrophage/results/20251017_hic_test/multiqc'
 
 # To use automatic upload to resgen, add your credentials to  ~/.resgen/credentials

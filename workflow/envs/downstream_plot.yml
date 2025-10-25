@@ -1,0 +1,14 @@
+name: downstream_plot
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - python=3.11
+  - bioconda::cooltools
+  - bioconda::cooler
+  - bioconda::bioframe
+  - conda-forge::pandas
+  - conda-forge::numpy
+  - conda-forge::scikit-learn
+  - conda-forge::matplotlib

@@ -100,6 +100,62 @@ rule concat_pairstat:
             "-l {log}"
         )
 
+
+rule concat_RSstat:
+    input:
+        RSstats=expand(
+            f"{mapped_parsed_sorted_chunks_folder}/{{library}}/assemble.RSstat",
+            library=LIBRARY_RUN_FASTQS.keys(),
+        ),
+    output:
+        summary=f"{pairs_library_folder}/combined_RSstats_summary.tsv",
+    log:
+        "logs/concat_RSstat/concat_RSstat.log",
+    run:
+        from pathlib import Path
+
+        # Build library names based on the order of input files (parent folder name)
+        library_names = [Path(f).parent.name for f in input.RSstats]
+        input_files_str = " ".join(input.RSstats)
+        names_str = " ".join(library_names)
+
+        shell(
+            "python workflow/scripts/concat_stat.py "
+            "-i {input_files_str} "
+            "-n {names_str} "
+            "-o {output.summary} "
+            "-l {log}"
+        )
+
+
+rule concat_hicpro_pairstat:
+    input:
+        hicproPairStats=expand(
+            f"{pairs_library_folder}/{{library}}.allValidPairs.mergestat",
+            library=LIBRARY_RUN_FASTQS.keys(),
+        ),
+    output:
+        summary=f"{pairs_library_folder}/combined_hicpro_pairstats_summary.tsv",
+    log:
+        "logs/concat_RSstat/concat_hicpro_pairstats.log",
+    run:
+        from pathlib import Path
+
+        # Build library names based on the order of input files (parent folder name)
+        library_names = [Path(f).parent.name for f in input.hicproPairStats]
+        input_files_str = " ".join(input.hicproPairStats)
+        names_str = " ".join(library_names)
+
+        shell(
+            "python workflow/scripts/concat_stat.py "
+            "-i {input_files_str} "
+            "-n {names_str} "
+            "-o {output.summary} "
+            "-l {log}"
+        )
+
+
+
 def get_all_pairstats_for_library(wc):
     # Loop over all runs for this library and gather pairstats
     all_files = []
@@ -145,6 +201,30 @@ def get_all_mapstats_for_library(wc):
         )
     return sorted(all_files)
 
+
+def get_all_RSstats_for_library(wc):
+    # Loop over all runs for this library and gather mapstats
+    all_files = []
+    for run in LIBRARY_RUN_FASTQS[wc.library].keys():
+        # Trigger the checkpoint for this run
+        checkpoints.chunk_fastq.get(library=wc.library, run=run)
+        # Discover chunk_ids from the processed fastq files (which exist after chunking)
+        # Use side 2 fastq to determine chunk_ids
+        chunk_ids = glob_wildcards(
+            f"{processed_fastqs_folder}/{wc.library}/{run}/2.{{chunk_id}}.fastq.gz"
+        ).chunk_id
+        # Normalize chunk_ids: strip "_trimmed" suffix if present
+        chunk_ids = [cid.replace("_trimmed", "") for cid in chunk_ids]
+        # Add both sides for all chunks in this run
+        all_files.extend(
+            expand(
+                f"{mapped_parsed_sorted_chunks_folder}/{wc.library}/{run}/{{chunk_id}}.hicpro.RSstat",
+                chunk_id=chunk_ids,
+            )
+        )
+    return sorted(all_files)
+
+
 rule combine_map_pair_stats:
     input:
         get_all_pairstats_for_library
@@ -164,6 +244,17 @@ rule combine_map_mapstat:
         "logs/combine_map_mapstat/{library}.log"
     shell:
         "python workflow/scripts/merge_statfiles.py -f {input}> {output} 2>{log}"
+
+rule combine_RSstat:
+    input:
+        get_all_RSstats_for_library
+    output:
+        f"{mapped_parsed_sorted_chunks_folder}/{{library}}/assemble.RSstat"
+    log:
+        "logs/combine_RSstats/{library}.log"
+    shell:
+        "python workflow/scripts/merge_statfiles.py -f {input}> {output} 2>{log}"
+
 
 rule multiqc:
     input:
