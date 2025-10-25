@@ -6,9 +6,8 @@ import shlex
 
 include: "rules/common.smk"
 
-configfile: "config/test_config.yml"
-
 #configfile: "config/test_config.yml"
+configfile: "20251017_hic_run2_config.yml"
 
 # Load FASTQ samples from CSV if specified
 import os
