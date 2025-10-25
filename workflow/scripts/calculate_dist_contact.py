@@ -109,18 +109,25 @@ def plot_hexbin_p(cvd_df, out_file="P_s_hexbin.png"):
     """
     print(f"Plotting aggregated hexbin P(s) curve to {out_file}...")
     f, ax = plt.subplots(1, 1, figsize=(7, 6))
-
-    hb = ax.hexbin(
-        cvd_df['dist_bp'],
-        cvd_df['contact_frequency'],
-        xscale='log',
-        yscale='log',
-        gridsize=100,
-        norm=LogNorm(),
-        cmap='inferno'
-    )
-
-    f.colorbar(hb, ax=ax, label='Count per bin')
+    if cvd_df.empty:
+            print("...WARNING: No valid contact pairs found. Writing empty plot.")
+            ax.text(0.5, 0.5, "No Data", 
+                    horizontalalignment='center', 
+                    verticalalignment='center', 
+                    transform=ax.transAxes,
+                    fontsize=20,
+                    color='gray')
+    else:
+        hb = ax.hexbin(
+            cvd_df['dist_bp'],
+            cvd_df['contact_frequency'],
+            xscale='log',
+            yscale='log',
+            gridsize=100,
+            norm=LogNorm(),
+            cmap='inferno'
+        )
+        f.colorbar(hb, ax=ax, label='Count per bin')
 
     ax.set(
         xlabel='separation, bp',
@@ -143,6 +150,29 @@ def calculate_loglog_fits(cvd_df, hg38_arms_df, out_file="P_s_fits.csv"):
     # (This function was already well-written, so I've left it as-is,
     #  but added a print statement and file saving)
     print("Calculating log-log linear fits...")
+    # Define columns for the output table
+    output_columns = ['region', 'slope', 'mse', 'n_points']
+    
+    # Check if the input DataFrame is empty
+    if cvd_df.empty:
+        print("...WARNING: No valid contact pairs found. Writing empty table.")
+        
+        # Create an empty DataFrame with the correct columns
+        results_df = pd.DataFrame(columns=output_columns)
+        
+        # Add a placeholder "ALL_REGIONS" row
+        all_region_stats = {
+            'region': 'ALL_REGIONS', 'slope': np.nan, 
+            'mse': np.nan, 'n_points': 0
+        }
+        all_region_df = pd.DataFrame([all_region_stats])
+        results_df = pd.concat([results_df, all_region_df], ignore_index=True)
+
+        # Save the empty table and exit the function
+        results_df.to_csv(out_file, index=False)
+        print(f"Results saved to {out_file}")
+        return results_df    
+
     regions = hg38_arms_df['name'].unique()
     results_list = []
     
