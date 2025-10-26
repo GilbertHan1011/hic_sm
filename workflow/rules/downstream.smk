@@ -22,3 +22,34 @@ rule dist_vs_contact:
         -o {params.out_dir} \
         -p {wildcards.library}.{wildcards.filter_name}.{wildcards.min_resolution} >{log[0]} 2>&1
         """
+
+rule mustache_loop_detection:
+    input:
+        mcool=f"{coolers_library_folder}/{{library}}.{assembly}.{{filter_name}}.{min_resolution}.mcool",
+    output:
+        loops = f"{downstream_loops_folder}/{{library}}.{{filter_name}}.{{resolution}}_loops.tsv"
+    log:
+        "logs/downstream_loops/{library}.{filter_name}.{resolution}.log",
+    benchmark:
+        "benchmarks/downstream_loops/{library}.{filter_name}.{resolution}.tsv"
+    conda:
+        "../envs/mustache.yml"
+    params:
+        threshold = lambda wildcards: config["mustache"]["thresholds"].get(wildcards.resolution, "0.1"),
+        sparse = lambda wildcards: config["mustache"]["sparse_params"].get(wildcards.resolution, "0.88"),
+        mustache_path = config["mustache"]["executable_path"],
+        prefix = "{library}.{filter_name}.{resolution}",
+        out_dir = downstream_loops_folder
+    threads: 20
+    shell:
+        r"""
+        bash workflow/scripts/mustache_loop_detection.sh \
+        -i {input.mcool} \
+        -r {wildcards.resolution} \
+        -o {params.out_dir} \
+        -p {params.prefix} \
+        -t {threads} \
+        -pt {params.threshold} \
+        -st {params.sparse} \
+        -m {params.mustache_path} >{log[0]} 2>&1
+        """

@@ -1,0 +1,16 @@
+name: mustache
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - pip
+  - h5py
+  - hdf5
+  - numpy
+  - python=3.8
+  - pip:
+    - cooler
+    - hic-straw
+    - pandas
+    - scipy
+    - statsmodels
