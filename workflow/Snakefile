@@ -6,8 +6,8 @@ import shlex
 
 include: "rules/common.smk"
 
-configfile: "config/test_config.yml"
-#configfile: "20251017_hic_run2_config.yml"
+#configfile: "config/test_config.yml"
+configfile: "20251017_hic_run2_config.yml"
 
 # Load FASTQ samples from CSV if specified
 import os
@@ -124,7 +124,7 @@ library_mustache_loops = expand(
     f"{downstream_loops_folder}/{{library}}.{{filter_name}}.{{resolution}}_loops.tsv",
     library=LIBRARY_RUN_FASTQS.keys(),
     filter_name=list(config["bin"]["filters"].keys()),
-    resolution=config["bin"]["resolutions"],
+    resolution=config["bin"]["resolution_for_mustache"],
 )
 
 library_hic = []

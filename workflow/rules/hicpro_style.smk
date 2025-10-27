@@ -15,6 +15,7 @@ rule digest_genome:
         --out {output} > {log} 2>&1
         """
 
+# To do : use rust version to replace
 rule map2frag:
     input:
         bam=f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.bam",

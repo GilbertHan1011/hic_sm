@@ -37,10 +37,10 @@ rule mustache_loop_detection:
     params:
         threshold = lambda wildcards: config["mustache"]["thresholds"].get(wildcards.resolution, "0.1"),
         sparse = lambda wildcards: config["mustache"]["sparse_params"].get(wildcards.resolution, "0.88"),
-        mustache_path = config["mustache"]["executable_path"],
+        mustache_path = "workflow/scripts/mustache.py",
         prefix = "{library}.{filter_name}.{resolution}",
         out_dir = downstream_loops_folder
-    threads: 20
+    threads: 5
     shell:
         r"""
         bash workflow/scripts/mustache_loop_detection.sh \
